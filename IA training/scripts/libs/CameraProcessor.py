@@ -486,8 +486,9 @@ class CameraProcessor:
 
         return True
     
-    def processDistances(self, img_folder_path, corner_ids, color_filter, plane_size, 
-                        pixels_per_mm=1, center_id=50, angle_step=3):
+    def processDistances(self, img_folder_path, 
+                         corner_ids, color_filter, plane_size, 
+                        pixels_per_mm=1, center_id=50, angle_step=3, max_value = None):
 
         images = self.ImageFileName(img_folder_path)
         distances_out = []
@@ -522,7 +523,6 @@ class CameraProcessor:
             # Aplicar filtro de color
             mask, masked_img = self.colorFilter(warped, color_filter)
             # mask = 255 donde hay pared azul, 0 donde no
-
             if mask is None:
                 print(f"[WARN] Filtro de color falló. Se omite.")
                 continue
@@ -530,34 +530,43 @@ class CameraProcessor:
 
             # Barrido
             angles = list(range(0, 180 + angle_step, angle_step))
-            distances = []
-
-            for angle_deg in angles:
-                theta = np.deg2rad(angle_deg)
-                dx = np.cos(theta)
-                dy = np.sin(theta)
-
-                dist = 0.0
-                step = 1.0
-
-                while True:
-                    x = int(cx + dx * dist)
-                    y = int(cy - dy * dist)
-
-                    # salir de imagen
-                    if x < 0 or x >= w or y < 0 or y >= h:
-                        distances.append(dist/pixels_per_mm)
-                        break
-
-                    # detección de pared azul
-                    if mask[y, x] > 0:
-                        distances.append(dist/pixels_per_mm)
-                        break
-
-                    dist += step
+            distances = self._sweep(angles, mask, center_t[0], pixels_per_mm, max_value)
 
             distances_out.append(distances)
             angles_out.append(angles)
             img_name.append(os.path.basename(fname))
 
         return distances_out, angles_out, img_name
+
+    def _sweep(self, angles, map, center_coord, pixels_per_mm=1, max_value = None):
+        cx, cy = center_coord
+        h, w = map.shape
+        distances = []
+
+        for angle_deg in angles:
+            theta = np.deg2rad(angle_deg)
+            dx = np.cos(theta)
+            dy = np.sin(theta)
+
+            dist = 0.0
+            step = 1.0
+
+            while True:
+                x = int(cx + dx * dist)
+                y = int(cy - dy * dist)
+
+                # salir de imagen
+                if x < 0 or x >= w or y < 0 or y >= h:
+                    if max_value is not None:
+                        distances.append(max_value)
+                    else:
+                        distances.append(dist/pixels_per_mm)
+                    break
+
+                # detección de pared azul
+                if map[y, x] > 0:
+                    distances.append(dist/pixels_per_mm)
+                    break
+
+                dist += step
+        return distances
